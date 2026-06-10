@@ -26,6 +26,7 @@ print result;
 我們使用類似 BNF 的語法來定義 Neon 的結構：
 
 Program    ::= Statement*
+
 Statement  ::= LetStmt | AssignStmt | WhileStmt | PrintStmt
 LetStmt    ::= "let" Identifier ":" Type "=" Expression ";"
 AssignStmt ::= Identifier "=" Expression ";"
