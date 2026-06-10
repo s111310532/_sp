@@ -1,1 +1,30 @@
-
+期末作業報告
+一、p0編譯器加上while迴圈
+成品:[習題1](https://github.com/s111310532/_sp/tree/master/Homework/01)
+重點:在撰寫或擴充 P0 編譯器以支援 while 迴圈時，核心挑戰在於控制流（Control Flow）與標記（Labels）的處理，以及目標碼（Object Code）的生成。
+二、作業報告
+一、p0編譯器加上while迴圈
+成品:[習題1](https://github.com/s111310532/_sp/tree/master/Homework/01)
+重點:在撰寫或擴充 P0 編譯器以支援 while 迴圈時，核心挑戰在於控制流（Control Flow）與標記（Labels）的處理，以及目標碼（Object Code）的生成。
+二、全新程式語言
+成品:[習題2](https://github.com/s111310532/_sp/tree/master/Homework/02)
+重點:
+1. 語言核心設計與特性
+語言命名：Neon型態系統：強型態 (Strongly Typed)。
+變數宣告時必須明確指定型態（目前支援 Int 與 Bool），且執行期嚴格檢查型態，不允許隱式轉型（例如：Int 不能與 Bool 相加，也不能相互指派）。
+執行模式：解譯執行 (Interpreted)。直接透過走訪抽象語法樹（AST）來執行，無須編譯成機器碼或中間碼（IR）。
+記憶體管理：直接依賴宿主語言（Python）的垃圾蒐集機制（GC）。
+2. 語法結構 (BNF) 精要Neon 的語法規範了程式的書寫骨架，主要分為陳述句 (Statements) 與運算式 (Expressions)：
+陳述句：包含變數宣告（let）、變數指派（=）、迴圈控制（while）與輸出（print）。每個陳述句結尾都必須加上分號 ;。
+運算式優先級:變數-乘除-加減-比較-相等性 . 
+解譯器（Interpreter）三大核心階段用 Python 實作的解譯器程式碼，主要是由這三個核心類別（Class）互相協作完成：
+❶ 詞法分析器 (Lexer / Scanner)職責：負責把純文字的原始碼（String），切碎成一個一個有意義的標記（Token）。
+範例：將 let n: Int = 5; 轉換成 [LET, ID("n"), COLON, INT_TYPE, ASSIGN, INT(5), SEMI]。
+❷ 語法分析器 (Parser)職責：將 Lexer 產生的 Token 陣列，根據 BNF 語法規則，組裝成一棵抽象語法樹 (AST, Abstract Syntax Tree)。
+實作技術：使用「遞迴下降分析法 (Recursive Descent Parsing)」，依據運算子優先級（Precedence）由低到高進行遞迴解析。
+❸ 執行器 (Interpreter) 與環境 (Environment)職責：負責「走訪 AST 節點」並執行相應的動作。
+環境類別 (Environment)：用來記錄變數名稱、變數當前的值，以及最重要的變數型態。
+型態檢查：在 LetStmtNode（宣告）與 AssignStmtNode（指派）的執行階段，會比對數值型態，若不符則直接拋出 Exception（型態錯誤）。
+4. 範例程式執行流程與驗證以階乘計算為例：宣告 n = 5 與 result = 1。進入 while 條件判斷（當 n > 0 成立時）。
+執行區塊內的乘法與減法，並更新 Environment 中的變數值。
+迴圈結束後，print 節點從環境中取出 result 的最終值 120 並輸出。
