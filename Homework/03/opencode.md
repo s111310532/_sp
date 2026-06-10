@@ -45,9 +45,13 @@ CoWoS全球需求:100 萬片（年增 49%）
 CoWoS 成為 AI 晶片標配，2026 年格局：
 
 客戶	CoWoS 需求量	佔比
+
 NVIDIA	59.5 萬片	60%
+
 Broadcom	15 萬片	15%
+
 AMD	10.5 萬片	11%
+
 其他 (Amazon, Marvell, 聯發科)	~14 萬片	14%
 
 
