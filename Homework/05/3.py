@@ -1,57 +1,38 @@
 import threading
+import queue
 import time
 import random
 
-class Philosopher(threading.Thread):
-    def __init__(self, index, left_chopstick, right_chopstick):
-        super().__init__()
-        self.index = index
-        self.left_chopstick = left_chopstick
-        self.right_chopstick = right_chopstick
-        self.running = True
+def producer(buf, count):
+    for i in range(count):
+        item = f"商品-{i+1}"
+        buf.put(item)  # 若隊列滿了會自動阻塞
+        print(f"[生產者] 生產了 {item}，目前庫存: {buf.qsize()}")
+        time.sleep(random.uniform(0.1, 0.3))
+    print("[生產者] 工作結束")
 
-    def run(self):
-        while self.running:
-            print(f"哲學家 {self.index} 正在思考...")
-            time.sleep(random.uniform(0.1, 0.3))
-            
-            # 策略：打破對稱性，防止循環等待
-            if self.index % 2 == 1:
-                first_chopstick = self.left_chopstick
-                second_chopstick = self.right_chopstick
-            else:
-                first_chopstick = self.right_chopstick
-                second_chopstick = self.left_chopstick
+def consumer(buf, count):
+    for _ in range(count):
+        item = buf.get()  # 若隊列空了會自動阻塞
+        print(f"  [消費者] 消費了 {item}，目前庫存: {buf.qsize()}")
+        buf.task_done()
+        time.sleep(random.uniform(0.2, 0.5))
+    print("  [消費者] 工作結束")
 
-            # 依序取得兩支筷子
-            with first_chopstick:
-                with second_chopstick:
-                    print(f"  ==> 哲學家 {self.index} 開始用餐。")
-                    time.sleep(random.uniform(0.1, 0.3))
-                    print(f"  <-- 哲學家 {self.index} 吃飽了，放下筷子。")
-
-def run_dining_simulation():
-    num_philosophers = 5
-    chopsticks = [threading.Lock() for _ in range(num_philosophers)]
-    philosophers = []
+def run_producer_consumer():
+    # 限制緩衝區大小為 5
+    buffer_queue = queue.Queue(maxsize=5)
+    total_items = 15
     
-    for i in range(num_philosophers):
-        left_idx = i
-        right_idx = (i + 1) % num_philosophers
-        p = Philosopher(i, chopsticks[left_idx], chopsticks[right_idx])
-        philosophers.append(p)
+    t_prod = threading.Thread(target=producer, args=(buffer_queue, total_items))
+    t_cons = threading.Thread(target=consumer, args=(buffer_queue, total_items))
     
-    print("【哲學家用餐】開始模擬（執行 3 秒後自動停止）...")
-    for p in philosophers:
-        p.start()
-        
-    time.sleep(3)
-    for p in philosophers:
-        p.running = False
-        
-    for p in philosophers:
-        p.join()
-    print("【哲學家用餐】模擬結束")
+    t_prod.start()
+    t_cons.start()
+    
+    t_prod.join()
+    t_cons.join()
+    print("【生產者消費者】模擬完成")
 
 if __name__ == "__main__":
-    run_dining_simulation()
+    run_producer_consumer()
