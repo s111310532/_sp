@@ -1,1 +1,1104 @@
+================================================================================
+                LINUX 系統程式設計報告
+                本報告使用opencode完成
+================================================================================
 
+目錄
+--------------------------------------------------------------------------------
+  一、前言與概述
+  二、行程管理 (Process Management)
+  三、記憶體管理 (Memory Management)
+  四、檔案 I/O 與檔案系統 (File I/O & File System)
+  五、行程間通訊 (Inter-Process Communication, IPC)
+  六、訊號 (Signals)
+  七、執行緒 (Threads)
+  八、網路程式設計 (Network Programming)
+  九、系統呼叫 (System Calls)
+  十、核心模組與裝置驅動程式
+  十一、Linux 安全機制
+  十二、除錯與效能分析工具
+  十三、總結與參考資料
+
+
+================================================================================
+一、前言與概述
+================================================================================
+
+Linux 系統程式設計指的是直接使用 Linux 核心提供的系統呼叫 (system calls)
+與 C 標準函式庫來撰寫軟體，與一般應用程式開發最大的不同在於：
+
+  (1) 必須理解作業系統核心的運作原理
+  (2) 直接與核心互動，而非透過高階框架
+  (3) 需要管理資源（記憶體、檔案描述子、行程等）
+  (4) 需要處理並行與同步問題
+
+Linux 核心版本演進：
+  - Linux 1.0 (1994)    : 基本行程管理、檔案系統
+  - Linux 2.6 (2003)    : O(1) 排程器、NPTL 執行緒、epoll
+  - Linux 3.x (2011)    : CFS 排程器、cgroups
+  - Linux 4.x (2015)    : eBPF、namespaces 強化
+  - Linux 5.x (2019)    : io_uring、核心鎖定改善
+  - Linux 6.x (2022~)   : 持續最佳化、新硬體支援
+
+系統程式設計的核心 API：
+  - 系統呼叫 (syscalls) : 核心提供的最底層介面
+  - glibc : C 標準函式庫，封裝系統呼叫
+  - POSIX 標準 : 可攜性介面規範
+
+
+================================================================================
+二、行程管理 (Process Management)
+================================================================================
+
+2.1 行程生命週期
+--------------------------------------------------------------------------------
+在 Linux 中，行程 (process) 是正在執行的程式實體。每個行程有獨立的
+虛擬位址空間、檔案描述子表、訊號處理器、環境變數等。
+
+行程狀態：
+  - TASK_RUNNING     : 正在執行或等待 CPU
+  - TASK_INTERRUPTIBLE : 可中斷的睡眠（等待資源）
+  - TASK_UNINTERRUPTIBLE : 不可中斷的睡眠（如等待磁碟 I/O）
+  - TASK_STOPPED     : 已停止（收到 SIGSTOP）
+  - TASK_ZOMBIE      : 已終止但父行程尚未回收 (wait)
+
+2.2 fork() 系統呼叫
+--------------------------------------------------------------------------------
+  pid_t fork(void);
+
+  - 複製目前行程，產生子行程
+  - 父行程回傳子行程 PID，子行程回傳 0
+  - fork failure 回傳 -1
+  - Copy-On-Write (COW) 技術：父子行程共享實體記憶體，
+    直到任一者寫入時才複製
+
+  範例：
+      pid_t pid = fork();
+      if (pid == 0) {
+          // 子行程
+          printf("Child: PID=%d\n", getpid());
+          exit(0);
+      } else if (pid > 0) {
+          // 父行程
+          printf("Parent: child PID=%d\n", pid);
+          wait(NULL);
+      }
+
+2.3 exec() 系列
+--------------------------------------------------------------------------------
+  execl, execlp, execle, execv, execvp, execvpe
+
+  - 以新程式取代目前行程的程式碼與資料
+  - 成功不返回，失敗回傳 -1
+  - 常見用法：fork 後在子行程中 exec 新程式
+
+  範例：
+      pid_t pid = fork();
+      if (pid == 0) {
+          execlp("/bin/ls", "ls", "-l", NULL);
+          perror("exec failed");
+          exit(1);
+      }
+      wait(NULL);
+
+2.4 wait() 與 waitpid()
+--------------------------------------------------------------------------------
+  pid_t wait(int *status);
+  pid_t waitpid(pid_t pid, int *status, int options);
+
+  - 父行程等待子行程結束
+  - 回收子行程的終止狀態，避免殭屍行程
+  - WNOHANG 選項：非阻塞等待
+
+  狀態巨集：
+      WIFEXITED(status)   : 是否正常退出
+      WEXITSTATUS(status) : 取得退出碼
+      WIFSIGNALED(status) : 是否被訊號終止
+      WTERMSIG(status)    : 終止的訊號編號
+
+2.5 殭屍與孤兒行程
+--------------------------------------------------------------------------------
+  - 殭屍行程 (Zombie)  : 子行程結束但父行程未 wait。佔用 PCB，
+                        應避免大量產生。
+  - 孤兒行程 (Orphan)  : 父行程先結束，子行程由 init (PID 1) 接管。
+
+2.6 行程群組與工作階段
+--------------------------------------------------------------------------------
+  - 行程群組 (process group) : 相關行程的集合
+  - 工作階段 (session)       : 一個或多個行程群組的集合
+  - 控制終端機 (controlling terminal)
+  - setsid() 建立新工作階段（daemon 實作關鍵）
+
+2.7 Daemon 行程實作步驟
+--------------------------------------------------------------------------------
+  (1) fork() 後父行程退出
+  (2) setsid() 建立新工作階段
+  (3) 再次 fork()，確保脫離終端
+  (4) chdir("/") 切換工作目錄
+  (5) umask(0) 重設檔案遮罩
+  (6) 關閉 stdin/stdout/stderr
+  (7) 開啟 syslog 或其他日誌
+
+
+================================================================================
+三、記憶體管理 (Memory Management)
+================================================================================
+
+3.1 虛擬記憶體架構
+--------------------------------------------------------------------------------
+  每個行程有獨立的 4GB（32位元）虛擬位址空間：
+
+  +------------------+ 0xFFFFFFFF
+  |  核心空間         |
+  +------------------+ 0xC0000000 (3GB)
+  |  堆疊 (stack)    | 向下增長
+  +------------------+
+  |  空閒區          |
+  +------------------+
+  |  堆積 (heap)     | 向上增長 (brk)
+  +------------------+
+  |  BSS (未初始化)  |
+  +------------------+
+  |  Data (已初始化) |
+  +------------------+
+  |  Text (程式碼)   |
+  +------------------+ 0x08048000
+
+3.2 記憶體配置
+--------------------------------------------------------------------------------
+  void *sbrk(intptr_t increment);
+  void *brk(void *addr);
+  void *mmap(void *addr, size_t length, int prot, int flags,
+             int fd, off_t offset);
+  int munmap(void *addr, size_t length);
+
+  - sbrk/brk : 調整 program break，傳統的 heap 管理方式
+  - mmap     : 映射檔案或匿名記憶體
+  - glibc malloc() 內部使用 brk() 和 mmap() 混合策略
+  - 小配置用 brk()，大配置 (>128KB) 用 mmap()
+
+3.3 mmap 進階用法
+--------------------------------------------------------------------------------
+  - 檔案映射 (file-backed)  : 將檔案映射到記憶體
+  - 匿名映射 (anonymous)    : MAP_ANONYMOUS | MAP_PRIVATE
+  - 共享映射 (MAP_SHARED)   : 修改會寫回檔案
+  - 私有映射 (MAP_PRIVATE)  : COW，修改不寫回檔案
+
+  範例：讀取檔案 via mmap
+      int fd = open("data.txt", O_RDONLY);
+      struct stat sb;
+      fstat(fd, &sb);
+      char *data = mmap(NULL, sb.st_size, PROT_READ,
+                        MAP_PRIVATE, fd, 0);
+      // 直接對 data 做讀取
+      munmap(data, sb.st_size);
+      close(fd);
+
+3.4 記憶體保護與 mprotect
+--------------------------------------------------------------------------------
+  int mprotect(void *addr, size_t len, int prot);
+  - PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC
+  - 用於 JIT compiler、softmmu 等場景
+
+3.5 OOM Killer
+--------------------------------------------------------------------------------
+  當系統記憶體不足時，核心啟動 Out-Of-Memory Killer
+  - 選擇分數最高者殺掉 (badness score)
+  - /proc/<PID>/oom_score 可查看
+  - oom_adj 可調整權重 (-1000 關閉)
+
+
+================================================================================
+四、檔案 I/O 與檔案系統 (File I/O & File System)
+================================================================================
+
+4.1 檔案描述子 (File Descriptor)
+--------------------------------------------------------------------------------
+  - Linux 中的 I/O 操作抽象
+  - 非負整數，0=stdin, 1=stdout, 2=stderr
+  - 每個行程有獨立的 fd table
+  - 上限：ulimit -n (soft limit)，/proc/sys/fs/file-max (system)
+
+4.2 基本系統呼叫
+--------------------------------------------------------------------------------
+  int open(const char *pathname, int flags, mode_t mode);
+  ssize_t read(int fd, void *buf, size_t count);
+  ssize_t write(int fd, const void *buf, size_t count);
+  off_t lseek(int fd, off_t offset, int whence);
+  int close(int fd);
+
+  flags 常用組合：
+    O_RDONLY, O_WRONLY, O_RDWR
+    O_CREAT, O_TRUNC, O_APPEND
+    O_NONBLOCK, O_SYNC, O_EXCL
+
+4.3 檔案中繼資料
+--------------------------------------------------------------------------------
+  int stat(const char *path, struct stat *buf);
+  int fstat(int fd, struct stat *buf);
+  int lstat(const char *path, struct stat *buf); // 不追隨 symbolic link
+
+  struct stat 包含：
+    st_dev, st_ino, st_mode, st_nlink,
+    st_uid, st_gid, st_rdev, st_size,
+    st_blksize, st_blocks, st_atime, st_mtime, st_ctime
+
+4.4 目錄操作
+--------------------------------------------------------------------------------
+  DIR *opendir(const char *name);
+  struct dirent *readdir(DIR *dirp);
+  int mkdir(const char *pathname, mode_t mode);
+  int rmdir(const char *pathname);
+
+4.5 高級 I/O
+--------------------------------------------------------------------------------
+  (1) 非阻塞 I/O (Non-blocking I/O)
+      - open() 帶 O_NONBLOCK
+      - read() 若無資料立即回傳 EAGAIN
+
+  (2) I/O 多工 (I/O Multiplexing)
+      - select()    : 跨平台但效率低 (FD_SETSIZE 限制)
+      - poll()      : 無上限但仍需掃描所有 fd
+      - epoll()     : Linux 專屬，事件驅動，效率最高
+
+  (3) epoll 使用模式：
+      int epfd = epoll_create1(0);
+      struct epoll_event ev;
+      ev.events = EPOLLIN | EPOLLET;  // Edge-Triggered
+      ev.data.fd = fd;
+      epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
+      // 事件迴圈
+      struct epoll_event events[64];
+      int n = epoll_wait(epfd, events, 64, -1);
+      for (int i = 0; i < n; i++) {
+          // handle events[i].data.fd
+      }
+
+  (4) io_uring (Linux 5.1+)
+      - 非同步 I/O 框架，減少系統呼叫次數
+      - 使用 submission queue (SQ) 與 completion queue (CQ)
+      - 適合高效能伺服器與儲存系統
+
+  (5) 記憶體映射 I/O
+      - mmap() + 直接記憶體存取
+      - 避免 read/write 系統呼叫開銷
+      - 適合大檔案隨機存取
+
+4.6 緩衝區與標準 I/O
+--------------------------------------------------------------------------------
+  - glibc stdio (fopen, fread, fwrite, fclose)
+  - 三種緩衝模式：
+      _IONBF  : 無緩衝 (stderr)
+      _IOLBF  : 行緩衝 (stdout 終端機模式)
+      _IOFBF  : 全緩衝 (一般檔案)
+  - setvbuf() 可自訂緩衝行為
+  - 核心層也有 page cache (VFS 層)
+
+
+================================================================================
+五、行程間通訊 (Inter-Process Communication, IPC)
+================================================================================
+
+5.1 傳統 Unix IPC
+--------------------------------------------------------------------------------
+
+  (1) Pipe (匿名管線)
+      int pipe(int pipefd[2]);
+      - pipefd[0] = 讀端, pipefd[1] = 寫端
+      - 僅適用於父子或有親緣關係的行程
+      - 單向通訊
+
+  (2) FIFO / Named Pipe
+      int mkfifo(const char *pathname, mode_t mode);
+      - 透過檔案系統路徑建立
+      - 無親緣關係的行程也可使用
+
+5.2 System V IPC
+--------------------------------------------------------------------------------
+  (3) 訊息佇列 (Message Queue)
+      int msgget(key_t key, int msgflg);
+      int msgsnd(int msqid, const void *msgp, size_t msgsz, int msgflg);
+      ssize_t msgrcv(int msqid, void *msgp, size_t msgsz,
+                     long msgtyp, int msgflg);
+
+  (4) 共享記憶體 (Shared Memory)
+      int shmget(key_t key, size_t size, int shmflg);
+      void *shmat(int shmid, const void *shmaddr, int shmflg);
+      int shmdt(const void *shmaddr);
+
+      - 最快的 IPC 方式（不需核心介入資料傳輸）
+      - 需搭配同步機制使用 (semaphore)
+
+  (5) 信號量 (Semaphore)
+      int semget(key_t key, int nsems, int semflg);
+      int semop(int semid, struct sembuf *sops, size_t nsops);
+      int semctl(int semid, int semnum, int cmd, ...);
+
+5.3 POSIX IPC
+--------------------------------------------------------------------------------
+  (6) POSIX 訊息佇列
+      mqd_t mq_open(const char *name, int oflag, mode_t mode,
+                    struct mq_attr *attr);
+      - 路徑以 / 開頭 (如 /myqueue)
+      - 支援訊號通知 (mq_notify)
+
+  (7) POSIX 共享記憶體
+      int shm_open(const char *name, int oflag, mode_t mode);
+      - 搭配 mmap() 使用
+
+  (8) POSIX 信號量
+      sem_t *sem_open(const char *name, int oflag, ...);
+      sem_t sem;  // 無名信號量（執行緒或相關行程用）
+      sem_wait(), sem_post(), sem_trywait()
+
+5.4 Socket 作為 IPC
+--------------------------------------------------------------------------------
+  - Unix Domain Socket (AF_UNIX / AF_LOCAL)
+  - 支援 SOCK_STREAM 與 SOCK_DGRAM
+  - 速度比 TCP localhost 快
+  - 範例：
+      struct sockaddr_un addr;
+      addr.sun_family = AF_UNIX;
+      strcpy(addr.sun_path, "/tmp/mysocket");
+
+5.5 IPC 效能比較
+--------------------------------------------------------------------------------
+  速度（由快到慢）：
+    1. mmap 共享記憶體 (最快，無核心介入傳輸)
+    2. Unix Domain Socket
+    3. Pipe / FIFO
+    4. 訊息佇列
+    5. TCP Socket (包含核心網路堆疊開銷)
+    6. Signal (功能有限，傳輸量極小)
+
+  選擇依據：
+    - 同一主機大量資料 → 共享記憶體
+    - 雙向即時通訊   → Unix Socket
+    - 簡單單向傳輸   → Pipe/FIFO
+    - 跨主機         → TCP/UDP Socket
+
+
+================================================================================
+六、訊號 (Signals)
+================================================================================
+
+6.1 訊號基礎
+--------------------------------------------------------------------------------
+  訊號是非同步的事件通知機制，用於：
+  - 核心通知行程（如 SIGSEGV, SIGFPE）
+  - 行程間通訊（如 SIGUSR1, SIGUSR2）
+  - 使用者中斷（Ctrl+C → SIGINT）
+
+6.2 標準訊號
+--------------------------------------------------------------------------------
+  SIGHUP    (1)  : 終端機斷線
+  SIGINT    (2)  : 中斷 (Ctrl+C)
+  SIGQUIT   (3)  : 退出 (Ctrl+\)
+  SIGILL    (4)  : 非法指令
+  SIGTRAP   (5)  : 追蹤陷阱 (debugger)
+  SIGABRT   (6)  : abort()
+  SIGBUS    (7)  : 匯流排錯誤
+  SIGFPE    (8)  : 浮點數例外
+  SIGKILL   (9)  : 強制終止 (不可捕捉/忽略)
+  SIGSEGV   (11) : 無效記憶體存取
+  SIGPIPE   (13) : 破損的管線
+  SIGALRM   (14) : 計時器到期
+  SIGTERM   (15) : 終止 (預設 kill 訊號)
+  SIGCHLD   (17) : 子行程狀態變更
+  SIGCONT   (18) : 繼續執行
+  SIGSTOP   (19) : 暫停 (不可捕捉/忽略)
+  SIGTSTP   (20) : 暫停 (Ctrl+Z)
+  SIGWINCH  (28) : 終端機視窗大小改變
+  SIGUSR1   (10) : 使用者自訂 1
+  SIGUSR2   (12) : 使用者自訂 2
+
+6.3 訊號處理
+--------------------------------------------------------------------------------
+  sighandler_t signal(int signum, sighandler_t handler);
+  int sigaction(int signum, const struct sigaction *act,
+                struct sigaction *oldact);
+
+  - signal() 簡單但行為因 Unix 版本而異
+  - sigaction() 是 POSIX 標準，推薦使用
+
+  struct sigaction {
+      void     (*sa_handler)(int);        // 處理函式
+      void     (*sa_sigaction)(int, siginfo_t *, void *);
+      sigset_t  sa_mask;                  // 處理期間遮罩
+      int       sa_flags;                 // 行為旗標
+  };
+
+  sa_flags 常見值：
+    SA_RESTART  : 自動重啟被中斷的系統呼叫
+    SA_SIGINFO  : 使用 sa_sigaction 接收更多資訊
+    SA_NOCLDWAIT: 子行程結束不產生殭屍
+    SA_ONESHOT  : 處理一次後恢復預設
+
+6.4 訊號遮罩 (Signal Mask)
+--------------------------------------------------------------------------------
+  int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+  - SIG_BLOCK   : 加入遮罩
+  - SIG_UNBLOCK : 從遮罩移除
+  - SIG_SETMASK : 設為指定集合
+
+  sigset_t 操作：
+    sigemptyset(), sigfillset(), sigaddset(), sigdelset(), sigismember()
+
+6.5 可靠訊號與即時訊號
+--------------------------------------------------------------------------------
+  - 標準訊號 (1-31) : 不排隊，相同訊號只保留一次
+  - 即時訊號 (SIGRTMIN-SIGRTMAX, 32-64) :
+      - 支援排隊
+      - 可攜帶整數/指標資料 (sigqueue())
+      - 按號碼順序遞送
+  - sigpending() : 查詢懸而未決的訊號
+
+6.6 非同步信號安全函式 (Async-Signal-Safe)
+--------------------------------------------------------------------------------
+  在訊號處理式中只能呼叫 async-signal-safe 函式：
+  - write(), read(), open(), close()
+  - _exit() (不是 exit())
+  - sigaction(), sigprocmask(), sigpending()
+  - getpid(), getuid()
+  - 注意：printf(), malloc(), free() 不安全！
+
+
+================================================================================
+七、執行緒 (Threads)
+================================================================================
+
+7.1 執行緒 vs 行程
+--------------------------------------------------------------------------------
+  - 執行緒共用相同的位址空間、檔案描述子、訊號處理器
+  - 每個執行緒有獨立的堆疊、errno、排程優先權
+  - Linux 實作：NPTL (Native POSIX Thread Library)
+  - 內部使用 clone() 系統呼叫，與行程差異在於資源共享程度
+
+7.2 pthread 基本操作
+--------------------------------------------------------------------------------
+  int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                     void *(*start_routine)(void *), void *arg);
+  void pthread_exit(void *retval);
+  int pthread_join(pthread_t thread, void **retval);
+  int pthread_detach(pthread_t thread);
+
+  - pthread_t 是 opaque 型別
+  - 預設為 joinable，必須 join 或 detach
+  - detach 後無法 join，資源自動釋放
+
+7.3 執行緒同步
+--------------------------------------------------------------------------------
+
+  (1) Mutex (互斥鎖)
+      pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+      pthread_mutex_lock(&mutex);
+      // 臨界區段
+      pthread_mutex_unlock(&mutex);
+
+      Mutex 類型：
+        PTHREAD_MUTEX_NORMAL       : 預設，無死結檢測
+        PTHREAD_MUTEX_ERRORCHECK   : 錯誤檢查（可檢測重複鎖定）
+        PTHREAD_MUTEX_RECURSIVE    : 可遞迴鎖定
+        PTHREAD_MUTEX_DEFAULT      : 行為取決於實作
+
+  (2) Condition Variable (條件變數)
+      pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+      pthread_cond_wait(&cond, &mutex);
+      pthread_cond_signal(&cond);   // 喚醒一個
+      pthread_cond_broadcast(&cond); // 喚醒全部
+
+      - 必須搭配 mutex 使用
+      - pthread_cond_wait 會原子性地釋放 mutex 並睡眠
+
+  (3) Read-Write Lock
+      pthread_rwlock_t rwlock;
+      pthread_rwlock_rdlock(&rwlock);   // 讀鎖（可共享）
+      pthread_rwlock_wrlock(&rwlock);   // 寫鎖（互斥）
+      pthread_rwlock_unlock(&rwlock);
+
+  (4) Barrier
+      pthread_barrier_t barrier;
+      pthread_barrier_init(&barrier, NULL, count);
+      pthread_barrier_wait(&barrier);
+      - 等待 count 個執行緒到達屏障後同時繼續
+
+  (5) Spinlock
+      pthread_spinlock_t spinlock;
+      - 忙等 (busy-waiting)，不進入睡眠
+      - 僅適用於極短時間的鎖定
+      - 不適合單核心系統
+
+7.4 Thread-Specific Data (TSD)
+--------------------------------------------------------------------------------
+  pthread_key_t key;
+  pthread_key_create(&key, destructor);
+  pthread_setspecific(key, value);
+  void *val = pthread_getspecific(key);
+
+  - 每個執行緒有獨立的資料副本
+  - 常用於 errno 等全域變數的執行緒安全實作
+
+7.5 C11 執行緒 (C11 Threads)
+--------------------------------------------------------------------------------
+  - thrd_create, thrd_join, mtx_lock, cnd_wait
+  - 較 pthread 簡化但功能較少
+  - Linux 上底層仍使用 pthread 實作
+
+7.6 clone() 系統呼叫
+--------------------------------------------------------------------------------
+  int clone(int (*fn)(void *), void *stack, int flags, void *arg, ...);
+
+  flags 控制資源共享程度：
+    CLONE_VM     : 共享記憶體空間
+    CLONE_FS     : 共享檔案系統資訊
+    CLONE_FILES  : 共享檔案描述子
+    CLONE_SIGHAND: 共享訊號處理器
+    CLONE_THREAD : 加入同一執行緒群組
+
+  - pthread_create 內部呼叫 clone(CLONE_VM | CLONE_FS | CLONE_FILES | ...)
+
+
+================================================================================
+八、網路程式設計 (Network Programming)
+================================================================================
+
+8.1 Socket 基礎
+--------------------------------------------------------------------------------
+  int socket(int domain, int type, int protocol);
+
+  domain (位址家族)：
+    AF_INET    : IPv4
+    AF_INET6   : IPv6
+    AF_UNIX    : Unix domain (本機 IPC)
+    AF_PACKET  : raw packet (L2)
+
+  type (通訊類型)：
+    SOCK_STREAM    : TCP (可靠、有序、雙向)
+    SOCK_DGRAM     : UDP (不可靠、資料邊界)
+    SOCK_RAW       : 直接 IP 層
+    SOCK_SEQPACKET : 有序、可靠、有邊界
+
+8.2 TCP Server 標準流程
+--------------------------------------------------------------------------------
+  (1) socket()       - 建立 socket
+  (2) bind()         - 綁定位址與埠
+  (3) listen()       - 開始監聽
+  (4) accept()       - 接受連線 (阻塞)
+  (5) read/write()   - 資料傳輸
+  (6) close()        - 關閉連線
+
+  範例：
+      int sfd = socket(AF_INET, SOCK_STREAM, 0);
+      struct sockaddr_in addr = {
+          .sin_family = AF_INET,
+          .sin_port   = htons(8080),
+          .sin_addr   = { .s_addr = INADDR_ANY }
+      };
+      bind(sfd, (struct sockaddr*)&addr, sizeof(addr));
+      listen(sfd, SOMAXCONN);
+      while (1) {
+          int cfd = accept(sfd, NULL, NULL);
+          // fork or thread to handle cfd
+          close(cfd);
+      }
+      close(sfd);
+
+8.3 TCP Client 標準流程
+--------------------------------------------------------------------------------
+  (1) socket()
+  (2) connect()      - 連線至伺服器
+  (3) read/write()
+  (4) close()
+
+  範例：
+      int sfd = socket(AF_INET, SOCK_STREAM, 0);
+      struct sockaddr_in addr = {
+          .sin_family = AF_INET,
+          .sin_port   = htons(8080)
+      };
+      inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+      connect(sfd, (struct sockaddr*)&addr, sizeof(addr));
+      send(sfd, "Hello", 5, 0);
+      close(sfd);
+
+8.4 UDP 通訊
+--------------------------------------------------------------------------------
+  伺服器：
+      recvfrom(sfd, buf, len, 0, (struct sockaddr*)&cli, &clen);
+      sendto(sfd, buf, len, 0, (struct sockaddr*)&cli, clen);
+
+  客戶端：
+      sendto(sfd, msg, msglen, 0, (struct sockaddr*)&srv, slen);
+      recvfrom(sfd, buf, len, 0, NULL, NULL);
+
+8.5 網路選項與調校
+--------------------------------------------------------------------------------
+  setsockopt() 常用選項：
+    SO_REUSEADDR    : 允許重複綁定位址（解決 TIME_WAIT）
+    SO_KEEPALIVE    : TCP 心跳檢測
+    TCP_NODELAY     : 關閉 Nagle 演算法
+    SO_RCVBUF       : 接收緩衝區大小
+    SO_SNDBUF       : 傳送緩衝區大小
+    SO_LINGER       : 控制 close() 行為
+
+8.6 高效能網路架構
+--------------------------------------------------------------------------------
+  (1) 行程 per 連線 (fork)
+      - 簡單但開銷大，連線數有限
+
+  (2) 執行緒 per 連線 (pthread)
+      - 比行程輕量，但大量執行緒仍有排程開銷
+
+  (3) Reactor 模式 (事件驅動)
+      - epoll + non-blocking I/O
+      - 單執行緒處理數萬連線 (如 Nginx, Redis)
+
+  (4) Proactor 模式
+      - 非同步 I/O (io_uring, Windows IOCP)
+      - 減少 context switch
+
+  (5) 多 Reactor 模式
+      - 一個 main reactor (accept) + 多個 sub reactor (I/O)
+      - 如 Netty, Nginx multi-worker
+
+8.7 進階網路技術
+--------------------------------------------------------------------------------
+  - SO_REUSEPORT : 多行程綁定同一個埠 (核心層負載平衡)
+  - TCP_FASTOPEN : 減少三次交握延遲 (TFO)
+  - eBPF/XDP     : 核心層封包處理，繞過核心網路堆疊
+  - TLS/SSL      : OpenSSL, GnuTLS 加密通訊
+  - UNIX Socket  傳送檔案描述子 : sendmsg() with cmsg
+
+
+================================================================================
+九、系統呼叫 (System Calls)
+================================================================================
+
+9.1 系統呼叫原理
+--------------------------------------------------------------------------------
+  系統呼叫是使用者空間與核心空間的唯一進入點：
+
+  流程：
+    (1) 使用者程式呼叫 C 函式庫包裝函式 (glibc)
+    (2) 包裝函式將參數放入暫存器 (rdi, rsi, rdx, r10, r8, r9)
+    (3) 將系統呼叫編號放入 rax
+    (4) 執行 syscall 指令 (x86-64) 或 int 0x80 (x86)
+    (5) 切換至核心態，核心執行 sys_xxx()
+    (6) 回傳值放入 rax，切回使用者態
+
+  x86-64 syscall 指令：
+    - 比 int 0x80 快（使用 MSR 暫存器，減少 overhead）
+    - 不經過中斷描述子表 (IDT)
+
+9.2 系統呼叫編號
+--------------------------------------------------------------------------------
+  查詢方式：
+    - /usr/include/asm/unistd_64.h (x86-64)
+    - /usr/include/asm/unistd_32.h (x86)
+
+  常見編號（x86-64）：
+    0   : read
+    1   : write
+    2   : open
+    9   : mmap
+    39  : getpid
+    56  : clone
+    57  : fork
+    59  : execve
+    60  : exit
+    61  : wait4
+    62  : kill
+
+9.3 直接系統呼叫 (vs glibc 包裝)
+--------------------------------------------------------------------------------
+  範例 (x86-64)：
+      #include <unistd.h>
+
+      static long my_write(int fd, const void *buf, size_t count) {
+          long ret;
+          asm volatile (
+              "syscall"
+              : "=a" (ret)
+              : "a" (1),     // syscall number (write=1)
+                "D" (fd),    // rdi
+                "S" (buf),   // rsi
+                "d" (count)  // rdx
+              : "rcx", "r11", "memory"
+          );
+          return ret;
+      }
+
+9.4 strace 追蹤系統呼叫
+--------------------------------------------------------------------------------
+  strace 是非常實用的除錯工具：
+
+      strace -p <PID>         # 附加到執行中行程
+      strace -e trace=open    # 只追蹤 open
+      strace -c ls            # 統計系統呼叫次數
+      strace -T ls            # 顯示每個 syscall 耗時
+
+9.5 檔案系統相關系統呼叫
+--------------------------------------------------------------------------------
+  - mount(), umount()     : 掛載/卸載檔案系統
+  - chroot()              : 變更根目錄
+  - pivot_root()          : 切換根檔案系統 (容器用)
+  - statfs(), fstatfs()   : 查詢檔案系統資訊
+  - sync(), fsync(), fdatasync() : 同步資料至磁碟
+
+9.6 行程排程相關
+--------------------------------------------------------------------------------
+  - nice(), setpriority(), getpriority()
+  - sched_setscheduler(), sched_getscheduler()
+  - sched_setaffinity()   : 設定 CPU affinity
+  - sched_yield()         : 自願讓出 CPU
+
+
+================================================================================
+十、核心模組與裝置驅動程式
+================================================================================
+
+10.1 核心模組基礎
+--------------------------------------------------------------------------------
+  核心模組 (Loadable Kernel Module, LKM) 是可動態載入核心的程式碼。
+
+  基本結構：
+      #include <linux/module.h>
+      #include <linux/kernel.h>
+      #include <linux/init.h>
+
+      static int __init my_init(void) {
+          printk(KERN_INFO "Module loaded\n");
+          return 0;
+      }
+
+      static void __exit my_exit(void) {
+          printk(KERN_INFO "Module unloaded\n");
+      }
+
+      module_init(my_init);
+      module_exit(my_exit);
+      MODULE_LICENSE("GPL");
+      MODULE_AUTHOR("Your Name");
+      MODULE_DESCRIPTION("Example module");
+
+  編譯方式 (Kbuild)：
+      obj-m += mymodule.o
+      make -C /lib/modules/$(uname -r)/build M=$(PWD) modules
+
+  操作指令：
+      insmod mymodule.ko    # 載入模組
+      rmmod mymodule        # 移除模組
+      modinfo mymodule.ko   # 檢視模組資訊
+      lsmod                 # 列出已載入模組
+
+10.2 字元裝置驅動程式
+--------------------------------------------------------------------------------
+  Linux 三大裝置類型：
+    - 字元裝置 (char device)  : 串流 I/O，如序列埠、鍵盤
+    - 區塊裝置 (block device) : 隨機存取區塊，如硬碟
+    - 網路裝置 (net device)   : 封包傳輸
+
+  字元裝置註冊：
+      #include <linux/cdev.h>
+
+      static dev_t dev_num;
+      static struct cdev my_cdev;
+      static struct file_operations my_fops = {
+          .open    = my_open,
+          .release = my_release,
+          .read    = my_read,
+          .write   = my_write,
+          .unlocked_ioctl = my_ioctl,
+      };
+
+      static int __init my_init(void) {
+          alloc_chrdev_region(&dev_num, 0, 1, "mydev");
+          cdev_init(&my_cdev, &my_fops);
+          cdev_add(&my_cdev, dev_num, 1);
+      }
+
+  file_operations 結構的關鍵回呼：
+      open()    : 開啟裝置時的初始化
+      release() : 關閉裝置時的清理
+      read()    : 從裝置讀取資料
+      write()   : 寫入資料至裝置
+      unlocked_ioctl() : 裝置控制命令 (取代 lock ioctl)
+      mmap()    : 映射裝置記憶體
+
+10.3 核心記憶體管理
+--------------------------------------------------------------------------------
+  - kmalloc(size, flags)    : 實體連續記憶體配置 (<= 128KB)
+  - kzalloc(size, flags)    : 配置並歸零
+  - vmalloc(size)           : 虛擬連續但實體可不連續
+  - kfree(ptr)
+  - __get_free_pages()      : 以 page 為單位配置
+
+  flags (GFP)：
+    GFP_KERNEL : 一般核心配置（可睡眠）
+    GFP_ATOMIC : 不可睡眠（中斷處理器中使用）
+    GFP_USER   : 使用者空間映射用
+
+10.4 中斷處理
+--------------------------------------------------------------------------------
+  static irqreturn_t my_handler(int irq, void *dev_id) {
+      // 中斷處理程式，在中斷上下文執行
+      // 不能睡眠、不能使用 GFP_KERNEL
+      return IRQ_HANDLED;
+  }
+
+  int request_irq(unsigned int irq, irq_handler_t handler,
+                  unsigned long flags, const char *name, void *dev);
+  void free_irq(unsigned int irq, void *dev);
+
+  - 上半部 (Top Half)   : 立即執行，快速，可遮罩
+  - 下半部 (Bottom Half) : 稍後執行，三種機制：
+      (1) Softirq        : 核心內部使用 (如網路 RX/TX)
+      (2) Tasklet        : 基於 softirq，不可睡眠
+      (3) Workqueue      : 行程上下文，可睡眠
+
+10.5 eBPF (Extended Berkeley Packet Filter)
+--------------------------------------------------------------------------------
+  - 在核心中執行的沙盒化程式
+  - 用途：追蹤、效能監控、網路過濾、安全控制
+  - 工具：bpftrace, BCC (BPF Compiler Collection)
+
+  範例 (bpftrace)：
+      # 追蹤所有 open 系統呼叫
+      tracepoint:syscalls:sys_enter_open
+      {
+          printf("%s calls open(%s)\n", comm, str(args->filename));
+      }
+
+10.6 Linux 核心排程器
+--------------------------------------------------------------------------------
+  - CFS (Completely Fair Scheduler, Linux 2.6.23+)
+  - 使用紅黑樹 (rbtree) 管理可執行行程
+  - vruntime 記錄虛擬執行時間，保證公平性
+  - 排程類別 (sched class)：
+      (1) stop_sched_class    : 最高優先權
+      (2) dl_sched_class      : Deadline 排程
+      (3) rt_sched_class      : 即時排程 (SCHED_FIFO, SCHED_RR)
+      (4) fair_sched_class    : CFS 一般排程
+      (5) idle_sched_class    : 空閒行程
+
+
+================================================================================
+十一、Linux 安全機制
+================================================================================
+
+11.1 使用者與權限
+--------------------------------------------------------------------------------
+  - UID (User ID), GID (Group ID)
+  - EUID (Effective UID) : 決定存取權限
+  - SUID/SGID : 以檔案擁有者/群組權限執行
+  - 傳統 Unix 權限：rwx (讀寫執行) for owner/group/other
+
+11.2 Capabilities (Linux 2.2+)
+--------------------------------------------------------------------------------
+  將 root 權限拆分為細粒度能力：
+    CAP_NET_BIND_SERVICE   : 綁定低於 1024 的埠
+    CAP_DAC_OVERRIDE       : 繞過檔案權限檢查
+    CAP_SYS_ADMIN          : 系統管理操作
+    CAP_NET_RAW            : 使用 raw socket
+    CAP_SYS_PTRACE         : 使用 ptrace
+
+  工具：
+    getcap, setcap, capsh
+
+  範例：允許二進位檔案綁定特權埠
+      setcap cap_net_bind_service=ep ./myserver
+
+11.3 SELinux (Security-Enhanced Linux)
+--------------------------------------------------------------------------------
+  - MAC (Mandatory Access Control) 實作
+  - 所有物件有安全上下文 (context)
+  - 策略 (policy) 定義允許的操作
+  - 模式：
+      enforcing  : 強制執行策略
+      permissive : 記錄但不阻擋
+      disabled   : 關閉
+
+11.4 AppArmor
+--------------------------------------------------------------------------------
+  - 路徑為基礎的 MAC
+  - 每個程式綁定安全設定檔 (profile)
+  - Ubuntu 預設使用，設定較 SELinux 簡單
+  - 工具：aa-status, aa-genprof, aa-complain
+
+11.5 Namespaces (Linux 3.8+)
+--------------------------------------------------------------------------------
+  資源隔離機制，容器的核心技術：
+
+    PID namespace    : 行程編號隔離 (容器內 PID 1)
+    Network namespace : 網路堆疊隔離
+    Mount namespace   : 掛載點隔離
+    UTS namespace    : hostname 隔離
+    IPC namespace    : System V IPC 隔離
+    User namespace   : UID/GID 隔離
+    Cgroup namespace : cgroup 根目錄隔離
+
+  系統呼叫：
+    clone() 帶 CLONE_NEW* 旗標
+    unshare(), setns()
+
+11.6 Cgroups (Control Groups)
+--------------------------------------------------------------------------------
+  資源限制與管理：
+    - cpu      : CPU 使用上限
+    - memory   : 記憶體限制
+    - blkio    : 磁碟 I/O 配額
+    - pids     : 行程數量限制
+    - net_prio : 網路優先權
+    - freezer  : 暫停/恢復行程群組
+
+  cgroup v2 (統一層級)：
+    - /sys/fs/cgroup/<group>/
+    - echo 100M > memory.max
+    - echo 50000 > pids.max
+
+11.7 Seccomp (Secure Computing Mode)
+--------------------------------------------------------------------------------
+  限制行程可使用的系統呼叫：
+
+      prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, prog);
+
+  常用工具：
+    - seccomp-tools
+    - Docker 使用 seccomp 限制容器系統呼叫
+    - Chrome/Chromium 沙盒
+
+11.8 其他安全機制
+--------------------------------------------------------------------------------
+  - ASLR (Address Space Layout Randomization)
+  - NX (Non-Executable) bit / DEP
+  - Stack canary (gcc -fstack-protector)
+  - KASLR (Kernel ASLR)
+  - KPTI (Kernel Page Table Isolation, 修復 Meltdown)
+  - Control-Flow Integrity (CFI)
+
+
+================================================================================
+十二、除錯與效能分析工具
+================================================================================
+
+12.1 除錯工具
+--------------------------------------------------------------------------------
+  GDB (GNU Debugger)：
+      gdb ./program
+      break main
+      run
+      next / step / continue
+      print variable
+      backtrace
+      frame N
+      info registers
+      watch expression
+
+  Valgrind：
+      valgrind --leak-check=full ./program
+      - Memcheck  : 記憶體錯誤檢測
+      - Cachegrind: 快取效能分析
+      - Helgrind  : 執行緒競賽檢測
+      - DRD       : 另一種執行緒錯誤檢測
+
+12.2 效能分析工具
+--------------------------------------------------------------------------------
+  perf (Linux Performance Counters)：
+      perf stat ./program        # 統計執行概況
+      perf record ./program      # 記錄效能資料
+      perf report                # 分析記錄
+      perf top                   # 即時系統分析
+      perf trace                 # 追蹤系統呼叫
+
+  Ftrace (核心內建追蹤)：
+      /sys/kernel/tracing/
+      echo function > current_tracer
+      echo do_sys_open > set_ftrace_filter
+      cat trace
+
+12.3 系統監控工具
+--------------------------------------------------------------------------------
+  top/htop       : 即時行程監控
+  ps             : 行程列表
+  vmstat         : 虛擬記憶體統計
+  iostat         : I/O 統計
+  netstat/ss     : 網路連線狀態
+  sar            : 系統活動記錄
+  /proc filesystem:
+      /proc/cpuinfo
+      /proc/meminfo
+      /proc/<PID>/maps
+      /proc/<PID>/fd/
+      /proc/<PID>/status
+
+12.4 動態追蹤
+--------------------------------------------------------------------------------
+  SystemTap      : 核心動態探測
+  bpftrace       : eBPF 高階追蹤語言
+  BCC (BPF Compiler Collection):
+      - execsnoop     : 追蹤新行程建立
+      - opensnoop     : 追蹤檔案開啟
+      - biolatency    : 磁碟延遲分布
+      - tcpconnect    : 追蹤 TCP 連線
+      - runqlat       : CPU 排程延遲
+
+
+================================================================================
+十三、總結與參考資料
+================================================================================
+
+13.1 學習路徑建議
+--------------------------------------------------------------------------------
+  初階：
+    1. 熟練使用 Linux 指令與 shell
+    2. 理解檔案 I/O 與行程概念
+    3. 練習撰寫簡單的 C 程式使用 fork/exec/wait
+    4. 學會使用 strace 觀察系統呼叫
+
+  中階：
+    1. 深入 IPC 各種機制與應用場景
+    2. 學習 pthread 程式設計與同步
+    3. 撰寫 TCP/UDP 網路程式
+    4. 熟悉 gdb 除錯與 valgrind 記憶體檢測
+    5. 閱讀核心原始碼中的 fs/ 與 kernel/ 目錄
+
+  進階：
+    1. 撰寫核心模組與字元裝置驅動
+    2. 學習 eBPF 程式設計
+    3. 理解 CFS 排程器實作
+    4. 研究記憶體管理 (slab allocator, page reclaim)
+    5. 貢獻核心修補 (kernel patch)
+
+13.2 推薦書籍
+--------------------------------------------------------------------------------
+  - "Linux System Programming" - Robert Love
+  - "Advanced Programming in the UNIX Environment" - W. Richard Stevens
+  - "The Linux Programming Interface" - Michael Kerrisk
+  - "Linux Kernel Development" - Robert Love
+  - "Understanding the Linux Kernel" - Bovet & Cesati
+  - "Linux Device Drivers" - Corbet, Rubini & Kroah-Hartman
+  - "BPF Performance Tools" - Brendan Gregg
+
+13.3 線上資源
+--------------------------------------------------------------------------------
+  - Linux Man Pages : https://man7.org/linux/man-pages/
+  - Linux Kernel Source : https://git.kernel.org/
+  - LWN.net : Linux 核心發展新聞
+  - Linux Foundation Training
+  - Red Hat Developer Blog
+  - Brendan Gregg 的效能部落格
+
+13.4 系統呼叫參考速查
+--------------------------------------------------------------------------------
+  man 2 syscalls    # 列出所有系統呼叫
+  man 2 intro       # 系統呼叫介紹
+  man 7 signal      # 訊號完整參考
+  man 7 pthreads    # pthread 概述
+  man 7 ipc         # System V IPC
+  man 7 capabilities # Linux capabilities
+  man 7 namespaces  # Linux namespaces
+  man 7 cgroups     # control groups
+
+================================================================================
+報告結束
+================================================================================
