@@ -13,6 +13,7 @@ Neon 是一個旨在兼具「極簡語法」與「強型態安全」的表達式
 以下是一段計算階乘（Factorial）的 Neon 程式碼範例：
 
 let n: Int = 5;
+
 let result: Int = 1;
 
 while n > 0 {
