@@ -2,29 +2,132 @@
 一、p0編譯器加上while迴圈
 成品:[習題1](https://github.com/s111310532/_sp/tree/master/Homework/01)
 重點:在撰寫或擴充 P0 編譯器以支援 while 迴圈時，核心挑戰在於控制流（Control Flow）與標記（Labels）的處理，以及目標碼（Object Code）的生成。
-二、作業報告
-一、p0編譯器加上while迴圈
-成品:[習題1](https://github.com/s111310532/_sp/tree/master/Homework/01)
-重點:在撰寫或擴充 P0 編譯器以支援 while 迴圈時，核心挑戰在於控制流（Control Flow）與標記（Labels）的處理，以及目標碼（Object Code）的生成。
+
 二、全新程式語言
 成品:[習題2](https://github.com/s111310532/_sp/tree/master/Homework/02)
+重點:Neon 是一個旨在兼具「極簡語法」與「強型態安全」的表達式導向（Expression-based）語言。
+使用 Python 來撰寫它的解譯器 (Interpreter)，因為 Python 的字串處理與樹狀結構操作非常直覺，適合用來快速實作原型。
+語法規範了程式的書寫骨架，主要分為陳述句 (Statements) 與運算式 (Expressions)。
+
+三、AI行列式設計專案
+成品:[習題3](https://github.com/s111310532/_sp/blob/master/Homework/03/opencode.md)
+重點:OpenCode 已經在my-agent 資料夾中建立了 Python 虛擬環境（venv），並寫好了內建 DuckDuckGo 上網搜尋功能的 AI Agent 核心腳本，透過智能化深化可以做到agent協同
+，可進一步增加可視化讓專案更美觀。
+
+四、opencode寫書
+成品:[習題4](https://github.com/s111310532/_sp/tree/master/Homework/04)
+重點:編譯器的核心任務是將高階語言（原始碼）翻譯成機器語言（目標碼），這個過程通常分為前端（Frontend）、中端（Optimizer）與後端（Backend）。
+在軟體工程與編譯器設計的語境中，OpenCode（開放原始碼 / Open Source Code） 的架構與開發模式帶來了巨大的優勢。
+
+五、執行續、競爭條件、互斥鎖、死結
+成果:[習題5](https://github.com/s111310532/_sp/tree/master/Homework/05)
 重點:
-1. 語言核心設計與特性
-語言命名：Neon型態系統：強型態 (Strongly Typed)。
-變數宣告時必須明確指定型態（目前支援 Int 與 Bool），且執行期嚴格檢查型態，不允許隱式轉型（例如：Int 不能與 Bool 相加，也不能相互指派）。
-執行模式：解譯執行 (Interpreted)。直接透過走訪抽象語法樹（AST）來執行，無須編譯成機器碼或中間碼（IR）。
-記憶體管理：直接依賴宿主語言（Python）的垃圾蒐集機制（GC）。
-2. 語法結構 (BNF) 精要Neon 的語法規範了程式的書寫骨架，主要分為陳述句 (Statements) 與運算式 (Expressions)：
-陳述句：包含變數宣告（let）、變數指派（=）、迴圈控制（while）與輸出（print）。每個陳述句結尾都必須加上分號 ;。
-運算式優先級:變數-乘除-加減-比較-相等性 . 
-解譯器（Interpreter）三大核心階段用 Python 實作的解譯器程式碼，主要是由這三個核心類別（Class）互相協作完成：
-❶ 詞法分析器 (Lexer / Scanner)職責：負責把純文字的原始碼（String），切碎成一個一個有意義的標記（Token）。
-範例：將 let n: Int = 5; 轉換成 [LET, ID("n"), COLON, INT_TYPE, ASSIGN, INT(5), SEMI]。
-❷ 語法分析器 (Parser)職責：將 Lexer 產生的 Token 陣列，根據 BNF 語法規則，組裝成一棵抽象語法樹 (AST, Abstract Syntax Tree)。
-實作技術：使用「遞迴下降分析法 (Recursive Descent Parsing)」，依據運算子優先級（Precedence）由低到高進行遞迴解析。
-❸ 執行器 (Interpreter) 與環境 (Environment)職責：負責「走訪 AST 節點」並執行相應的動作。
-環境類別 (Environment)：用來記錄變數名稱、變數當前的值，以及最重要的變數型態。
-型態檢查：在 LetStmtNode（宣告）與 AssignStmtNode（指派）的執行階段，會比對數值型態，若不符則直接拋出 Exception（型態錯誤）。
-4. 範例程式執行流程與驗證以階乘計算為例：宣告 n = 5 與 result = 1。進入 while 條件判斷（當 n > 0 成立時）。
-執行區塊內的乘法與減法，並更新 Environment 中的變數值。
-迴圈結束後，print 節點從環境中取出 result 的最終值 120 並輸出。
+1. 核心名詞定義
+執行緒 (Thread)：作業系統排程的最小單位。同一個行程（Process）內的執行緒共用記憶體空間（Heap、全域變數），但擁有獨立的 Stack 與程式計數器（PC）。
+競態條件 (Race Condition)：多個執行緒同時存取共享數據，且結果取決於執行的先後順序，導致數據不一致。
+互斥鎖 (Mutex)：確保同一時間只有一個執行緒能進入臨界區（Critical Section）的鎖定機制。
+死結 (Deadlock)：多個執行緒互相等待對方釋放資源，導致系統永久卡死的狀態。必須四個同時滿足才會發生死結，破除其中一個即可避免死結。
+
+2. 經典問題防錯策略
+銀行存提款（避免 Race Condition）：利用 threading.Lock（互斥鎖）將 += 和 -= 操作包裝成原子操作（Atomic Operation），防止交錯執行導致計算錯誤。
+生產者消費者（執行緒同步）：利用條件變數（Condition Variables），在緩衝區滿時阻塞生產者、空時阻塞消費者，避免忙碌等待（Busy Waiting）。
+哲學家用餐（避免 Deadlock）：採用對稱性破除策略（奇數號先拿左再拿右，偶數號先拿右再拿左），打破「循環等待」條件。
+
+六、行程與檔案
+成果:[習題6](https://github.com/s111310532/_sp/tree/master/Homework/06)
+重點:
+1. 檔案描述符（File Descriptor, FD）的本質
+它只是一個索引值（0, 1, 2...）：核心（Kernel）為每個行程維護一張表格。當你呼叫 open()，系統會找一個最小的空號碼（通常從 3 開始）交給你。
+
+三劍客的固定位置：
+0 (STDIN)：預設指向鍵盤
+1 (STDOUT)：預設指向螢幕
+2 (STDERR)：預設指向螢幕
+
+2. fork() 的「影分身之術」
+完全複製：fork() 出來的子行程會完整繼承父行程的 FD 表格。
+獨立指標：雖然表格一樣，但兩者是獨立的。子行程關閉 fd 3，父行程的 fd 3 依然存在且能正常使用。
+
+3. dup2() 是重新導向的「接線生」
+dup2(oldfd, newfd) 的口訣：「把 newfd 改去指向 oldfd 的地方」。
+範例：dup2(file_fd, 1)
+白話文：把 1（原本指向螢幕）拔掉，強制插到 file_fd（指向某檔案）的位置。
+結果：之後所有對 1 的操作（如 printf），都會自動改寫入該檔案。
+
+4. execvp() 的「奪舍（覆蓋）特性」
+靈魂互換，身體留下：execvp() 會把行程的程式碼（Code）和資料（Data）全部換成新程式（例如 ls），但行程 ID（PID）與檔案描述符表（FD Table）會被保留下來。
+為什麼 Shell 能做 I/O 重新導向？
+就是利用 execvp 的這個特性。子行程先用 dup2 把 1 改向檔案，再呼叫 execvp("ls", ...)。新來的 ls 程式毫不知情，依然傻傻地往 1 輸出，資料就自然流入檔案中了。
+七、期中
+成果:[期中](https://github.com/s111310532/_sp/tree/master/Homework/MID)
+重點:
+Linux 系統程式設計與核心架構大綱
+一、前言與概述
+Linux 作業系統歷史與哲學（Everything is a file）
+使用者空間 (User Space) 與核心空間 (Kernel Space) 的區隔
+GNU C 函式庫 (glibc) 的角色
+
+二、行程管理 (Process Management)
+行程生命週期與狀態遷移（Running, Sleeping, Zombie, Orphan）
+行程建立與取代：fork(), vfork(), exec() 系列函數
+行程終止與回收：exit(), wait(), waitpid()
+寫入時複製 (Copy-on-Write, COW) 機制
+
+三、記憶體管理 (Memory Management)
+虛擬記憶體與實體記憶體對應（頁表 Page Table、MMU）
+行程記憶體佈局（Text, Data, BSS, Heap, Stack）
+動態記憶體配置：brk(), sbrk(), malloc() 與 free() 的底層原理
+記憶體映射：mmap() 與匿名映射
+
+四、檔案 I/O 與檔案系統 (File I/O & File System)
+檔案描述符 (File Descriptor, FD) 與核心檔案表格
+系統呼叫層級 I/O：open(), read(), write(), close(), lseek()
+標準 C 函式庫 I/O (Buffered I/O)：fopen(), fread(), fwrite()
+虛擬檔案系統 (VFS) 架構與多路複用 I/O (select, poll, epoll)
+
+五、行程間通訊 (Inter-Process Communication, IPC)
+傳統 IPC：管道 (Pipe) 與命名管道 (FIFO)
+System V 與 POSIX IPC 對比
+共用記憶體 (Shared Memory) 與訊號量 (Semaphore)
+訊息佇列 (Message Queue)
+
+六、訊號 (Signals)
+訊號的概念、非同步事件處理與常見訊號（SIGINT, SIGKILL, SIGCHLD）
+訊號註冊與處理：signal(), sigaction()
+訊號阻擋與遮罩 (Signal Mask)：sigprocmask()
+可重入函數 (Reentrant Functions) 與訊號安全
+
+七、執行緒 (Threads)
+POSIX Threads (pthreads) 概念與行程的差異（LWP - Light Weight Process）
+執行緒建立、結合與分離：pthread_create(), pthread_join(), pthread_detach()
+執行緒同步機制：互斥鎖 (Mutex)、條件變數 (Condition Variable)、讀寫鎖 (RW Lock)
+死結 (Deadlock) 成因與預防
+
+八、網路程式設計 (Network Programming)
+網路通訊協定疊層與 Socket 抽象層
+TCP Socket 程式設計：socket(), bind(), listen(), accept(), connect()
+UDP Socket 程式設計：sendto(), recvfrom()
+並行伺服器架構設計（Multi-process vs Multi-thread vs Non-blocking I/O）
+
+九、系統呼叫 (System Calls)
+系統呼叫的運作原理與中斷機制（從 User Mode 切換到 Kernel Mode）
+syscall 指令與暫存器傳參規則
+如何自行在 Linux 核心中實作並新增一個自訂的系統呼叫
+
+十、核心模組與裝置驅動程式
+可載入核心模組 (LKM) 架構：init_module(), cleanup_module()
+字元裝置驅動程式 (Character Device Driver) 實作與 file_operations 結構
+主設備號 (Major Number) 與次設備號 (Minor Number)
+核心與使用者空間資料交換：copy_to_user(), copy_from_user()
+
+十一、Linux 安全機制
+傳統 Unix 權限模型 (UID, GID, rwx) 與 檔案特殊權限 (SUID, SGID, Sticky Bit)
+能力機制 (Capabilities) 的細粒度權限控制
+強制存取控制 (MAC)：SELinux 與 AppArmor 簡介
+
+十二、除錯與效能分析工具
+程式碼除錯：gdb 與記憶體洩漏檢查工具 Valgrind
+系統呼叫追蹤：strace 與 函式庫呼叫追蹤 ltrace
+效能分析與觀測：perf, top, htop, vmstat
+
+
