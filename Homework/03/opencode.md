@@ -1,22 +1,41 @@
 專案結構
+
 my-agent/
+
 ├── main.py                       # CLI 入口
+
 ├── requirements.txt
+
 ├── .env.example
-└── src/
+
+── src/
+   
     ├── core/
+    
     │   ├── config.py             # 環境設定 (model, memory_path, plugins_enabled...)
+   
     │   ├── memory.py             # 持久化記憶系統 (JSON 儲存)
+   
     │   ├── agent.py              # ReAct 推理循環 (Reason → Act → Observe)
+   
     │   └── planner.py            # 任務規劃器 (LLM 分解目標為子任務)
+   
     ├── tools/
+   
     │   ├── __init__.py           # ToolRegistry + BaseTool 基底類別
+   
     │   ├── web_search.py         # DuckDuckGo 搜尋
+   
     │   ├── web_fetch.py          # 網頁內容擷取
+   
     │   ├── file_ops.py           # 檔案讀/寫/列表
+   
     │   └── code_exec.py          # Python 程式碼執行 (沙箱)
+   
     ├── scheduler/
+   
     │   └── scheduler.py          # Cron 排程器 (背景執行緒)
+    
     └── plugins/
         ├── __init__.py           # Plugin 自動發現/載入
         └── example.py            # 範例 Plugin (註冊 greet 工具)
