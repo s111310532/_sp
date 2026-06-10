@@ -1,5 +1,7 @@
 利用opencode使用Python 寫一個簡單的 AI Research Agent。並把這個專案從一個「單純的指令指令碼」，升級為具備「自動化與智能化深化」的 Agent 平台/工作窩（Agent Workspace），讓 OpenCode 幫你引入 多智能體（Multi-Agent）架構 與 定時自主任務（Cron/Event-driven）。
+
 專案結構
+
 my-agent/
 
 ├── main.py                       # CLI 入口
@@ -58,10 +60,7 @@ python main.py --scheduler
 python main.py --list-convs
 python main.py --conv conv_123 --conv-clear
 
-
-
-
-
+生成台灣半導體產業現況並寫成報告
 
 台灣半導體產業分析報告（2026）
 
