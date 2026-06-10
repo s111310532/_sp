@@ -28,18 +28,27 @@ print result;
 Program    ::= Statement*
 
 Statement  ::= LetStmt | AssignStmt | WhileStmt | PrintStmt
+
 LetStmt    ::= "let" Identifier ":" Type "=" Expression ";"
+
 AssignStmt ::= Identifier "=" Expression ";"
+
 WhileStmt  ::= "while" Expression "{" Program "}" ";"
+
 PrintStmt  ::= "print" Expression ";"
 
 Type       ::= "Int" | "Bool"
 
 Expression ::= Equality
+
 Equality   ::= Relational ( ("==" | "!=") Relational )*
+
 Relational ::= Additive ( ("<" | ">") Additive )*
+
 Additive   ::= Multiplicative ( ("+" | "-") Multiplicative )*
+
 Multiplicative ::= Primary ( ("*" | "/") Primary )*
+
 Primary    ::= Integer | Boolean | Identifier | "(" Expression ")"
 
 4. 實作專案 (Python)
