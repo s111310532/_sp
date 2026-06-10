@@ -1,3 +1,48 @@
+利用opencode使用Python 寫一個簡單的 AI Research Agent。並把這個專案從一個「單純的指令指令碼」，升級為具備「自動化與智能化深化」的 Agent 平台/工作窩（Agent Workspace），讓 OpenCode 幫你引入 多智能體（Multi-Agent）架構 與 定時自主任務（Cron/Event-driven）。
+專案結構
+my-agent/
+├── main.py                       # CLI 入口
+├── requirements.txt
+├── .env.example
+└── src/
+    ├── core/
+    │   ├── config.py             # 環境設定 (model, memory_path, plugins_enabled...)
+    │   ├── memory.py             # 持久化記憶系統 (JSON 儲存)
+    │   ├── agent.py              # ReAct 推理循環 (Reason → Act → Observe)
+    │   └── planner.py            # 任務規劃器 (LLM 分解目標為子任務)
+    ├── tools/
+    │   ├── __init__.py           # ToolRegistry + BaseTool 基底類別
+    │   ├── web_search.py         # DuckDuckGo 搜尋
+    │   ├── web_fetch.py          # 網頁內容擷取
+    │   ├── file_ops.py           # 檔案讀/寫/列表
+    │   └── code_exec.py          # Python 程式碼執行 (沙箱)
+    ├── scheduler/
+    │   └── scheduler.py          # Cron 排程器 (背景執行緒)
+    └── plugins/
+        ├── __init__.py           # Plugin 自動發現/載入
+        └── example.py            # 範例 Plugin (註冊 greet 工具)
+使用方式
+# 單次查詢（自動使用工具）
+python main.py "2024 年諾貝爾獎得主有哪些？"
+
+# 互動模式（支援對話記憶）
+python main.py -i
+
+# 任務規劃模式（自動分解複雜任務）
+python main.py --plan "分析台灣半導體產業現況並寫成報告"
+
+# 排程器模式（背景執行定時任務）
+python main.py --scheduler
+
+# 管理對話
+python main.py --list-convs
+python main.py --conv conv_123 --conv-clear
+
+
+
+
+
+
 台灣半導體產業分析報告（2026）
 
 一、產業總覽
